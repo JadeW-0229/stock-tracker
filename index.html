@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>美股追蹤系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+    <nav class="bg-blue-800 text-white p-4 shadow-md">
+        <div class="container mx-auto flex gap-6 text-lg font-bold">
+            <button onclick="switchTab('home')" class="hover:text-blue-300">首頁</button>
+            <button onclick="switchTab('storm')" class="hover:text-blue-300">風暴先知</button>
+            <button onclick="switchTab('transformer')" class="hover:text-blue-300">變形金剛</button>
+            <button onclick="switchTab('ai')" class="hover:text-blue-300">AI對沖</button>
+        </div>
+    </nav>
+
+    <div class="container mx-auto py-8 px-4" id="app-content">
+        </div>
+
+<script>
+// --- 核心資料狀態 ---
+const INITIAL_FUNDS = 10000;
+let portfolios = {
+    storm: { name: '風暴先知組合', color: 'bg-red-500', balance: INITIAL_FUNDS, holdings: {}, firstBuyDate: null },
+    transformer: { name: '變形金剛組合', color: 'bg-yellow-500', balance: INITIAL_FUNDS, holdings: {}, firstBuyDate: null },
+    ai: { name: 'AI對沖組合', color: 'bg-green-500', balance: INITIAL_FUNDS, holdings: {}, firstBuyDate: null }
+};
+
+let currentTab = 'home';
+
+// --- 切換頁面 ---
+function switchTab(tabId) {
+    currentTab = tabId;
+    render();
+}
+
+// --- 計算組合統計數據 ---
+function calculateStats(portId) {
+    const port = portfolios[portId];
+    let investedValue = 0;
+    
+    // 計算總投資成本
+    for (const ticker in port.holdings) {
+        investedValue += port.holdings[ticker].shares * port.holdings[ticker].avgCost;
+    }
+
+    // 計算年化報酬率 (僅以淨現金流估算)
+    let annualizedReturn = 0;
+    if (port.firstBuyDate) {
+        const currentTotalValue = port.balance + investedValue;
+        const totalReturnRatio = currentTotalValue / INITIAL_FUNDS;
+        const daysElapsed = Math.max(1, (Date.now() - port.firstBuyDate) / (1000 * 60 * 60 * 24));
+        annualizedReturn = (Math.pow(totalReturnRatio, 365 / daysElapsed) - 1) * 100;
+    }
+
+    return { investedValue, annualizedReturn };
+}
+
+// --- 買賣邏輯 ---
+function handleTrade(portId, type) {
+    const tickerInput = document.getElementById('ticker').value.toUpperCase();
+    const sharesInput = parseFloat(document.getElementById('shares').value);
+    const priceInput = parseFloat(document.getElementById('price').value);
+
+    if (!tickerInput || !sharesInput || !priceInput || sharesInput <= 0 || priceInput <= 0) {
+        alert("請填寫正確的股票代碼、股數與價格");
+        return;
+    }
+
+    const port = portfolios[portId];
+    const tradeAmount = sharesInput * priceInput;
+    
+    if (!port.holdings[tickerInput]) {
+        port.holdings[tickerInput] = { shares: 0, avgCost: 0, totalCost: 0, netCashFlow: 0 };
+    }
+    const stock = port.holdings[tickerInput];
+
+    if (type === 'buy') {
+        if (port.balance < tradeAmount) {
+            alert("可用資金不足！"); return;
+        }
+        port.balance -= tradeAmount;
+        const newTotalCost = stock.totalCost + tradeAmount;
+        const newShares = stock.shares + sharesInput;
+        
+        stock.shares = newShares;
+        stock.avgCost = newTotalCost / newShares;
+        stock.totalCost = newTotalCost;
+        stock.netCashFlow -= tradeAmount;
+        
+        if (!port.firstBuyDate) port.firstBuyDate = Date.now();
+    } else if (type === 'sell') {
+        if (stock.shares < sharesInput) {
+            alert("持股數不足！"); return;
+        }
+        port.balance += tradeAmount;
+        stock.shares -= sharesInput;
+        stock.netCashFlow += tradeAmount;
+        // 若股數賣光，總成本歸零以便下次重新計算
+        if (stock.shares === 0) stock.totalCost = 0; 
+    }
+    render();
+}
+
+// --- 介面渲染邏輯 ---
+function render() {
+    const app = document.getElementById('app-content');
+    
+    if (currentTab === 'home') {
+        // 首頁 Dashboard
+        let html = `<h1 class="text-3xl font-bold mb-8">組合儀表板</h1><div class="grid grid-cols-1 md:grid-cols-3 gap-8">`;
+        
+        for (const [id, port] of Object.entries(portfolios)) {
+            const stats = calculateStats(id);
+            html += `
+                <div class="bg-white p-6 rounded-lg shadow-md flex flex-col items-center justify-center">
+                    <h2 class="text-xl font-bold mb-4">${port.name}</h2>
+                    <div class="${port.color} text-white w-48 h-48 rounded-full flex flex-col items-center justify-center shadow-lg">
+                        <span class="text-sm">目前年化報酬率</span>
+                        <span class="text-4xl font-black">${stats.annualizedReturn.toFixed(2)}%</span>
+                    </div>
+                </div>`;
+        }
+        html += `</div>`;
+        app.innerHTML = html;
+        
+    } else {
+        // 個別組合頁面
+        const portId = currentTab;
+        const port = portfolios[portId];
+        const stats = calculateStats(portId);
+
+        let html = `
+            <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+                <div class="flex justify-between items-center mb-6 border-b pb-4">
+                    <h1 class="text-3xl font-bold text-gray-800">${port.name}</h1>
+                    <h2 class="text-2xl font-bold text-blue-600">可用資金: $${port.balance.toFixed(2)}</h2>
+                </div>
+
+                <div class="flex flex-wrap gap-4 mb-8 bg-gray-50 p-4 rounded border">
+                    <input id="ticker" type="text" placeholder="股票代碼 (例: AAPL)" class="border p-2 rounded flex-1 min-w-[150px]">
+                    <input id="shares" type="number" placeholder="股數" class="border p-2 rounded flex-1 min-w-[100px]">
+                    <input id="price" type="number" placeholder="價格" class="border p-2 rounded flex-1 min-w-[100px]">
+                    
+                    <button onclick="handleTrade('${portId}', 'buy')" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded">買入</button>
+                    <button onclick="handleTrade('${portId}', 'sell')" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded">賣出</button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-gray-200">
+                                <th class="p-3 border">股票代碼</th>
+                                <th class="p-3 border">平均買入成本</th>
+                                <th class="p-3 border">目前持股數</th>
+                                <th class="p-3 border">累積損益(淨現金流)</th>
+                                <th class="p-3 border">持股比例</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
+        
+        for (const [ticker, data] of Object.entries(port.holdings)) {
+            // 只顯示有交易過的紀錄
+            if(data.shares > 0 || data.netCashFlow !== 0) {
+                const ratio = stats.investedValue === 0 ? 0 : ((data.shares * data.avgCost) / stats.investedValue) * 100;
+                const cashFlowColor = data.netCashFlow >= 0 ? 'text-green-600' : 'text-red-600';
+                
+                html += `
+                    <tr>
+                        <td class="p-3 border font-bold">${ticker}</td>
+                        <td class="p-3 border">$${data.avgCost.toFixed(2)}</td>
+                        <td class="p-3 border">${data.shares}</td>
+                        <td class="p-3 border font-bold ${cashFlowColor}">$${data.netCashFlow.toFixed(2)}</td>
+                        <td class="p-3 border">${ratio.toFixed(2)}%</td>
+                    </tr>`;
+            }
+        }
+
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="flex justify-center mt-10">
+                <div class="text-center">
+                    <h3 class="text-gray-500 font-bold mb-2">該組合目前年化報酬率</h3>
+                    <div class="text-6xl font-black ${stats.annualizedReturn >= 0 ? 'text-green-500' : 'text-red-500'}">
+                        ${stats.annualizedReturn.toFixed(2)}%
+                    </div>
+                </div>
+            </div>`;
+            
+        app.innerHTML = html;
+    }
+}
+
+// 初始化渲染
+render();
+</script>
+</body>
+</html>
