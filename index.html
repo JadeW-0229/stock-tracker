@@ -23,18 +23,41 @@
 <script>
 // --- 核心資料狀態 ---
 const INITIAL_FUNDS = 10000;
-let portfolios = {
+
+// 預設的乾淨狀態
+const DEFAULT_PORTFOLIOS = {
     storm: { name: '風暴先知組合', color: 'bg-red-500', balance: INITIAL_FUNDS, holdings: {}, firstBuyDate: null },
     transformer: { name: '變形金剛組合', color: 'bg-yellow-500', balance: INITIAL_FUNDS, holdings: {}, firstBuyDate: null },
     ai: { name: 'AI對沖組合', color: 'bg-green-500', balance: INITIAL_FUNDS, holdings: {}, firstBuyDate: null }
 };
 
+// 嘗試從瀏覽器本地儲存(localStorage)讀取舊資料，如果沒有就使用預設狀態
+let portfolios = JSON.parse(localStorage.getItem('stockTrackerData'));
+if (!portfolios) {
+    portfolios = JSON.parse(JSON.stringify(DEFAULT_PORTFOLIOS));
+}
+
 let currentTab = 'home';
+
+// --- 儲存資料到瀏覽器 ---
+function saveData() {
+    localStorage.setItem('stockTrackerData', JSON.stringify(portfolios));
+}
 
 // --- 切換頁面 ---
 function switchTab(tabId) {
     currentTab = tabId;
     render();
+}
+
+// --- 重置單一組合 ---
+function resetPortfolio(portId) {
+    if (confirm(`確定要清空「${portfolios[portId].name}」的所有紀錄嗎？資金將重置為 1 萬元。`)) {
+        // 將該組合恢復成預設值
+        portfolios[portId] = JSON.parse(JSON.stringify(DEFAULT_PORTFOLIOS[portId]));
+        saveData(); // 存檔
+        render();   // 重新繪製畫面
+    }
 }
 
 // --- 計算組合統計數據 ---
@@ -99,9 +122,11 @@ function handleTrade(portId, type) {
         port.balance += tradeAmount;
         stock.shares -= sharesInput;
         stock.netCashFlow += tradeAmount;
-        // 若股數賣光，總成本歸零以便下次重新計算
         if (stock.shares === 0) stock.totalCost = 0; 
     }
+    
+    // 買賣完成後，自動存檔並重新渲染畫面
+    saveData();
     render();
 }
 
@@ -116,7 +141,7 @@ function render() {
         for (const [id, port] of Object.entries(portfolios)) {
             const stats = calculateStats(id);
             html += `
-                <div class="bg-white p-6 rounded-lg shadow-md flex flex-col items-center justify-center">
+                <div class="bg-white p-6 rounded-lg shadow-md flex flex-col items-center justify-center relative">
                     <h2 class="text-xl font-bold mb-4">${port.name}</h2>
                     <div class="${port.color} text-white w-48 h-48 rounded-full flex flex-col items-center justify-center shadow-lg">
                         <span class="text-sm">目前年化報酬率</span>
@@ -135,9 +160,14 @@ function render() {
 
         let html = `
             <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-                <div class="flex justify-between items-center mb-6 border-b pb-4">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b pb-4 gap-4">
                     <h1 class="text-3xl font-bold text-gray-800">${port.name}</h1>
-                    <h2 class="text-2xl font-bold text-blue-600">可用資金: $${port.balance.toFixed(2)}</h2>
+                    <div class="flex items-center gap-4">
+                        <h2 class="text-2xl font-bold text-blue-600">可用資金: $${port.balance.toFixed(2)}</h2>
+                        <button onclick="resetPortfolio('${portId}')" class="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-1 px-3 rounded text-sm transition-colors">
+                            ⟲ 重置組合
+                        </button>
+                    </div>
                 </div>
 
                 <div class="flex flex-wrap gap-4 mb-8 bg-gray-50 p-4 rounded border">
@@ -145,8 +175,8 @@ function render() {
                     <input id="shares" type="number" placeholder="股數" class="border p-2 rounded flex-1 min-w-[100px]">
                     <input id="price" type="number" placeholder="價格" class="border p-2 rounded flex-1 min-w-[100px]">
                     
-                    <button onclick="handleTrade('${portId}', 'buy')" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded">買入</button>
-                    <button onclick="handleTrade('${portId}', 'sell')" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded">賣出</button>
+                    <button onclick="handleTrade('${portId}', 'buy')" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded transition-colors">買入</button>
+                    <button onclick="handleTrade('${portId}', 'sell')" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded transition-colors">賣出</button>
                 </div>
 
                 <div class="overflow-x-auto">
@@ -169,7 +199,7 @@ function render() {
                 const cashFlowColor = data.netCashFlow >= 0 ? 'text-green-600' : 'text-red-600';
                 
                 html += `
-                    <tr>
+                    <tr class="hover:bg-gray-50">
                         <td class="p-3 border font-bold">${ticker}</td>
                         <td class="p-3 border">$${data.avgCost.toFixed(2)}</td>
                         <td class="p-3 border">${data.shares}</td>
